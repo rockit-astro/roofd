@@ -1,0 +1,10 @@
+{
+  "daemon": "superwasp_roof",
+  "log_name": "superwasp_roof",
+  "control_machines": ["SWASPTCS"],
+  "serial_port": "/dev/roof",
+  "serial_baud": 9600,
+  "serial_timeout": 3,
+  "open_timeout": 60,
+  "close_timeout": 120
+}

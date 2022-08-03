@@ -1,0 +1,352 @@
+#!/usr/bin/env python3
+#
+# This file is part of roofd.
+#
+# roofd is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# roofd is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with roofd.  If not, see <http://www.gnu.org/licenses/>.
+
+"""SuperWASP roof daemon"""
+
+# pylint: disable=too-many-return-statements
+
+
+import argparse
+import datetime
+import re
+import threading
+import time
+import Pyro4
+import serial
+from warwick.observatory.common import log, TryLock
+from warwick.observatory.common.helpers import pyro_client_matches
+from warwick.observatory.roof import (
+    Config,
+    CommandStatus,
+    RoofStatus,
+    HeartbeatStatus)
+
+DATA_REGEX = r'(?P<status>\d),(?P<heartbeat>\d{3}),(?P<voltage>[+-]\d{2}\.\d{2})\r\n'
+
+
+class RoofDaemon:
+    """Daemon class that wraps the RS232 interface"""
+    def __init__(self, config):
+        self._config = config
+        self._port = None
+        self._port_error = False
+
+        self._regex = re.compile(DATA_REGEX)
+        self._status_lock = threading.Lock()
+        self._status_time = None
+        self._status = RoofStatus.PartiallyOpen
+        self._battery_voltage = 0
+        self._battery_voltage_sum = 0
+        self._battery_voltage_history = []
+        self._heartbeat_status = HeartbeatStatus.Disabled
+        self._heartbeat_seconds_remaining = 0
+        self._siren_enabled = True
+
+        self._command_lock = threading.Lock()
+        self._force_stopped = False
+        self._engineering_mode = False
+
+        runloop = threading.Thread(target=self.__monitor_status)
+        runloop.daemon = True
+        runloop.start()
+
+    def __monitor_status(self):
+        """Monitors the status of the roof by reading serial port"""
+        while True:
+            # Initial setup
+            try:
+                self._port = serial.Serial(self._config.serial_port,
+                                           self._config.serial_baud,
+                                           timeout=self._config.serial_timeout_seconds)
+                prefix = 'Restored' if self._port_error else 'Established'
+                log.info(self._config.log_name, prefix + ' serial connection to roof')
+                self._port_error = False
+
+            except Exception as exception:
+                print(exception)
+                print('Will retry in 5 seconds...')
+
+                if not self._port_error:
+                    log.error(self._config.log_name, 'Lost serial connection to roof')
+
+                print('Failed to connect to serial port (' + str(exception) + ')')
+                self._port_error = True
+                time.sleep(5.)
+                continue
+
+            try:
+                # Flush any stale state
+                self._port.flushInput()
+                self._port.flushOutput()
+
+                # Main run loop
+                while True:
+                    data = self._port.readline().decode('ascii')
+                    match = self._regex.match(data)
+                    if match:
+                        with self._status_lock:
+                            self._status_time = datetime.datetime.utcnow()
+                            self._status = int(match.group('status'))
+
+                            heartbeat = int(match.group('heartbeat'))
+                            if heartbeat == 0xFF:
+                                self._heartbeat_status = HeartbeatStatus.TimedOut
+                                self._heartbeat_seconds_remaining = 0
+                            elif heartbeat == 0:
+                                self._heartbeat_status = HeartbeatStatus.Disabled
+                                self._heartbeat_seconds_remaining = 0
+                            else:
+                                self._heartbeat_status = HeartbeatStatus.Active
+                                self._heartbeat_seconds_remaining = heartbeat
+
+                            self._battery_voltage = float(match.group('voltage'))
+                            self._battery_voltage_sum += self._battery_voltage
+                            self._battery_voltage_history.append(self._battery_voltage)
+                            if len(self._battery_voltage_history) > 10:
+                                self._battery_voltage_sum -= self._battery_voltage_history.pop(0)
+
+
+            except Exception as exception:
+                self._port.close()
+
+                print('Failed to read to serial port (' + str(exception) + ')')
+                print('Will retry in 5 seconds...')
+                if not self._port_error:
+                    log.error(self._config.log_name, 'Lost serial connection to roof')
+
+                self._port_error = True
+                time.sleep(5.)
+
+    def __move_to(self, open_position, siren=True):
+        """Issues a roof command and blocks until the final state is reached (or timeout)"""
+        if open_position and self._status == RoofStatus.Open:
+            return True
+
+        if not open_position and self._status == RoofStatus.Closed:
+            return True
+
+        # Sound the siren for 5 seconds before any movement
+        if siren and self._siren_enabled:
+            try:
+                if self._port.write(b'\xfe') != 1:
+                    raise serial.SerialException('Failed to send siren command')
+
+                for _ in range(10):
+                    if self._force_stopped:
+                        if self._port.write(b'\xff') != 1:
+                            raise serial.SerialException('Failed to send stop command')
+                        break
+                    time.sleep(0.5)
+
+            except Exception as exception:
+                log.error(self._config.log_name, 'Failed to send serial command (' + str(exception) + ')')
+
+        if self._force_stopped:
+            return False
+
+        start_time = datetime.datetime.utcnow()
+        try:
+            if open_position:
+                if self._port.write(b'\xf1') != 1:
+                    raise serial.SerialException('Failed to send open command')
+            else:
+                if self._port.write(b'\xf2') != 1:
+                    raise serial.SerialException('Failed to send open command')
+        except Exception as exception:
+            log.error(self._config.log_name, 'Failed to send serial command (' + str(exception) + ')')
+
+        heartbeat_tripped = False
+        while True:
+            time.sleep(2)
+            runtime = (datetime.datetime.utcnow() - start_time).total_seconds()
+            if open_position:
+                at_limit = self._status == RoofStatus.Open
+                timeout = self._config.open_timeout_seconds
+            else:
+                at_limit = self._status == RoofStatus.Closed
+                timeout = self._config.close_timeout_seconds
+
+            if self._force_stopped:
+                try:
+                    if self._port.write(b'\xff') != 1:
+                        raise serial.SerialException('Failed to send stop command')
+                except Exception as exception:
+                    log.error(self._config.log_name, 'Failed to send serial command (' + str(exception) + ')')
+                break
+
+            heartbeat_tripped = self._heartbeat_status == HeartbeatStatus.TimedOut
+            if heartbeat_tripped or at_limit or 0 < timeout < runtime:
+                break
+
+        return not self._force_stopped and not heartbeat_tripped and at_limit
+
+    @Pyro4.expose
+    def open(self):
+        """
+        Open the roof.
+        :return: CommandStatus indicating success or error code
+        """
+        if not pyro_client_matches(self._config.control_ips):
+            return CommandStatus.InvalidControlIP
+
+        if self._engineering_mode:
+            return CommandStatus.EngineeringModeActive
+
+        if self._heartbeat_status == HeartbeatStatus.TimedOut:
+            return CommandStatus.HeartbeatTimedOut
+
+        with TryLock(self._command_lock) as success:
+            if not success:
+                return CommandStatus.Blocked
+
+            if not self.__move_to(True):
+                log.error(self._config.log_name, 'Failed to open roof')
+                return CommandStatus.Failed
+
+            log.info(self._config.log_name, 'Open complete')
+            return CommandStatus.Succeeded
+
+    @Pyro4.expose
+    def close(self):
+        """
+        Close the roof.
+        :return: CommandStatus indicating success or error code
+        """
+        if not pyro_client_matches(self._config.control_ips):
+            return CommandStatus.InvalidControlIP
+
+        if self._engineering_mode:
+            return CommandStatus.EngineeringModeActive
+
+        if self._heartbeat_status == HeartbeatStatus.TimedOut:
+            return CommandStatus.HeartbeatTimedOut
+
+        with TryLock(self._command_lock) as success:
+            if not success:
+                return CommandStatus.Blocked
+
+            if not self.__move_to(False):
+                log.error(self._config.log_name, 'Failed to close roof')
+                return CommandStatus.Failed
+
+            log.info(self._config.log_name, 'Close complete')
+            return CommandStatus.Succeeded
+
+    @Pyro4.expose
+    def stop(self):
+        """Stops any active shutter movement"""
+        if not pyro_client_matches(self._config.control_ips):
+            return CommandStatus.InvalidControlIP
+
+        with self._status_lock:
+            if self._heartbeat_status == HeartbeatStatus.TimedOut and self._status == RoofStatus.Closing:
+                return CommandStatus.HeartbeatCloseInProgress
+
+        log.warning(self._config.log_name, 'Received stop command')
+
+        # The stop command overrides all other commands
+        self._force_stopped = True
+        with self._command_lock:
+            self._force_stopped = False
+
+        return CommandStatus.Succeeded
+
+    @Pyro4.expose
+    def set_engineering_mode(self, enabled):
+        """Enable engineering mode (all movement commands disabled)"""
+        if not pyro_client_matches(self._config.control_ips):
+            return CommandStatus.InvalidControlIP
+
+        with TryLock(self._command_lock) as success:
+            if not success:
+                return CommandStatus.Blocked
+
+            with self._status_lock:
+                if self._heartbeat_status != HeartbeatStatus.Disabled:
+                    return CommandStatus.EngineeringModeRequiresHeartbeatDisabled
+
+                if self._status == RoofStatus.Closing and self._heartbeat_status == HeartbeatStatus.TimedOut:
+                    return CommandStatus.HeartbeatCloseInProgress
+
+
+            self._engineering_mode = enabled
+            return CommandStatus.Succeeded
+
+    @Pyro4.expose
+    def set_heartbeat_timer(self, timeout):
+        """Enable or disable the auto-close countdown"""
+        if not pyro_client_matches(self._config.control_ips):
+            return CommandStatus.InvalidControlIP
+
+        if self._engineering_mode:
+            return CommandStatus.EngineeringModeActive
+
+        with self._status_lock:
+            if self._heartbeat_status == HeartbeatStatus.TimedOut and self._status == RoofStatus.Closing:
+                return CommandStatus.HeartbeatCloseInProgress
+
+            if timeout != 0 and self._heartbeat_status == HeartbeatStatus.TimedOut:
+                return CommandStatus.HeartbeatTimedOut
+
+        if timeout < 0 or timeout > 240:
+            return CommandStatus.HeartbeatInvalidTimeout
+
+        if self._port.write(bytes([timeout])) != 1:
+            return CommandStatus.Failed
+
+        return CommandStatus.Succeeded
+
+    @Pyro4.expose
+    def set_siren(self, enabled):
+        """Enable or disable the siren before normal open/close
+           (siren is always enabled for heartbeat close)
+        """
+        if not pyro_client_matches(self._config.control_ips):
+            return CommandStatus.InvalidControlIP
+
+        if self._engineering_mode:
+            return CommandStatus.EngineeringModeActive
+
+        self._siren_enabled = enabled
+        return CommandStatus.Succeeded
+
+    @Pyro4.expose
+    def status(self):
+        """Query the latest status."""
+        with self._status_lock:
+            date = self._status_time.strftime('%Y-%m-%dT%H:%M:%SZ')
+            return {
+                'date': date,
+                'status': self._status,
+                'status_label': RoofStatus.label(self._status),
+                'heartbeat_status': self._heartbeat_status,
+                'heartbeat_status_label': HeartbeatStatus.label(self._heartbeat_status),
+                'heartbeat_remaining': self._heartbeat_seconds_remaining,
+                'closed': self._status == RoofStatus.Closed,
+                'engineering_mode': self._engineering_mode,
+                'siren': self._siren_enabled,
+                'battery_voltage_latest': self._battery_voltage,
+                'battery_voltage_mean':  round(self._battery_voltage_sum / len(self._battery_voltage_history), 2),
+            }
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Roof daemon')
+    parser.add_argument('config', help='Path to configuration json file')
+    args = parser.parse_args()
+    c = Config(args.config)
+    c.daemon.launch(RoofDaemon(c))
