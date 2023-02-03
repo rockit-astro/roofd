@@ -15,9 +15,9 @@ A configuration file is specified when launching the roof server, and the `roof`
 
 ```python
 {
-  "daemon": "superwasp_roof", # Run the server as this daemon. Daemon types are registered in `warwick.observatory.common.daemons`.
-  "log_name": "superwasp_roof", # The name to use when writing messages to the observatory log.
-  "control_machines": ["SWASPTCS"], # Machine names that are allowed to control (rather than just query) state. Machine names are registered in `warwick.observatory.common.IP`.
+  "daemon": "halfmetre_roof", # Run the server as this daemon. Daemon types are registered in `warwick.observatory.common.daemons`.
+  "log_name": "halfmetre_roof", # The name to use when writing messages to the observatory log.
+  "control_machines": ["HalfMetreTCS"], # Machine names that are allowed to control (rather than just query) state. Machine names are registered in `warwick.observatory.common.IP`.
   "serial_port": "/dev/roof", # Serial FIFO for communicating with the roof controller
   "serial_baud": 9600, # Serial baud rate (always 9600)
   "serial_timeout": 3, # Serial comms timeout
@@ -38,9 +38,9 @@ The automated packaging scripts will push 4 RPM packages to the observatory pack
 | observatory-roof-server          | Contains the `roofd` server and systemd service file.                    |
 | observatory-roof-client          | Contains the `roof` commandline utility for controlling the roof server. |
 | python3-warwick-observatory-roof | Contains the python module with shared code.                             |
-| superwasp-roof-data              | Contains the json configuration and udev rules for SuperWASP.            |
+| halfmetre-roof-data              | Contains the json configuration and udev rules for the half metre.       |
 
-`observatory-roof-server` and `observatory-roof-client` and `superwasp-roof-data` packages should be installed on the `wasp-tcs` machine.
+`observatory-roof-server` and `observatory-roof-client` and `halfmetre-roof-data` packages should be installed on the `halfmetre-tcs` machine.
 
 After installing packages, the systemd service should be enabled:
 
@@ -75,6 +75,6 @@ sudo systemctl restart roofd@<config>
 
 The roof server and client can be run directly from a git clone:
 ```
-./roofd superwasp.json
-ROOFD_CONFIG_PATH=./superwasp.json ./roof status
+./roofd halfmetre.json
+ROOFD_CONFIG_PATH=./halfmetre.json ./roof status
 ```

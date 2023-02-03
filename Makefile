@@ -9,6 +9,6 @@ all:
 	${RPMBUILD} -ba observatory-roof-server.spec
 	${RPMBUILD} -ba observatory-roof-client.spec
 	${RPMBUILD} -ba python3-warwick-observatory-roof.spec
-	${RPMBUILD} -ba superwasp-roof-data.spec
+	${RPMBUILD} -ba halfmetre-roof-data.spec
 	mv build/noarch/*.rpm .
 	rm -rf build

@@ -1,7 +1,7 @@
 {
-  "daemon": "superwasp_roof",
-  "log_name": "superwasp_roof",
-  "control_machines": ["SWASPTCS"],
+  "daemon": "halfmetre_roof",
+  "log_name": "halfmetre_roof",
+  "control_machines": ["HalfMetreTCS"],
   "serial_port": "/dev/roof",
   "serial_baud": 9600,
   "serial_timeout": 3,

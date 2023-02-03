@@ -2,7 +2,7 @@ Name:           python3-warwick-observatory-roof
 Version:        20220803
 Release:        0
 License:        GPL3
-Summary:        Common backend code for the SuperWASP roof daemon.
+Summary:        Common backend code for the half metre roof daemon.
 Url:            https://github.com/warwick-one-metre/roofd
 BuildArch:      noarch
 
