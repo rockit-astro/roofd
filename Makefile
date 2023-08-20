@@ -6,9 +6,23 @@ RPMBUILD = rpmbuild --define "_topdir %(pwd)/build" \
 
 all:
 	mkdir -p build
-	${RPMBUILD} -ba observatory-roof-server.spec
-	${RPMBUILD} -ba observatory-roof-client.spec
-	${RPMBUILD} -ba python3-warwick-observatory-roof.spec
-	${RPMBUILD} -ba halfmetre-roof-data.spec
+	date --utc +%Y%m%d%H%M%S > VERSION
+	${RPMBUILD} --define "_version %(cat VERSION)" -ba rockit-roof.spec
+	${RPMBUILD} --define "_version %(cat VERSION)" -ba python3-rockit-roof.spec
+
 	mv build/noarch/*.rpm .
-	rm -rf build
+	rm -rf build VERSION
+
+install:
+	@date --utc +%Y%m%d%H%M%S > VERSION
+	@python3 -m build --outdir .
+	@sudo pip3 install rockit.roof-$$(cat VERSION)-py3-none-any.whl
+	@rm VERSION
+	@cp roofd roof /bin/
+	@cp roofd@.service /usr/lib/systemd/system/
+	@cp completion/roof /etc/bash_completion.d/
+	@install -d /etc/roofd
+	@echo ""
+	@echo "Installed server, client, and service files."
+	@echo "Now copy the relevant json config files to /etc/roofd/"
+	@echo "and udev rules to /usr/lib/udev/rules.d/"

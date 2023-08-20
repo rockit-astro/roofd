@@ -1,12 +1,10 @@
 ## Roof daemon
 
-`roofd` communicates with the [SuperWASP roof controller](https://github.com/warwick-one-metre/superwasp-roof-controller) attached via USB.  Control is exposed via Pyro.
+`roofd` communicates with the [Rolling roof controller](https://github.com/rockit-astro/roof-controller) attached via USB.  Control is exposed via Pyro.
 
 `roof` is a commandline utility that interfaces with the roof daemon.
 
-`python3-warwick-observatory-roof` is a python module with the common roof code.
-
-See [Software Infrastructure](https://github.com/warwick-one-metre/docs/wiki/Software-Infrastructure) for an overview of the software architecture and instructions for developing and deploying the code.
+`python3-rockit-roof` is a python module with the common roof code.
 
 ### Configuration
 
@@ -15,9 +13,9 @@ A configuration file is specified when launching the roof server, and the `roof`
 
 ```python
 {
-  "daemon": "halfmetre_roof", # Run the server as this daemon. Daemon types are registered in `warwick.observatory.common.daemons`.
+  "daemon": "halfmetre_roof", # Run the server as this daemon. Daemon types are registered in `rockit.common.daemons`.
   "log_name": "halfmetre_roof", # The name to use when writing messages to the observatory log.
-  "control_machines": ["HalfMetreTCS"], # Machine names that are allowed to control (rather than just query) state. Machine names are registered in `warwick.observatory.common.IP`.
+  "control_machines": ["HalfMetreTCS"], # Machine names that are allowed to control (rather than just query) state. Machine names are registered in `rockit.common.IP`.
   "serial_port": "/dev/roof", # Serial FIFO for communicating with the roof controller
   "serial_baud": 9600, # Serial baud rate (always 9600)
   "serial_timeout": 3, # Serial comms timeout
@@ -33,14 +31,12 @@ If the physical serial port or USB adaptors change these should be updated to ma
 
 The automated packaging scripts will push 4 RPM packages to the observatory package repository:
 
-| Package                          | Description                                                              |
-|----------------------------------|--------------------------------------------------------------------------|
-| observatory-roof-server          | Contains the `roofd` server and systemd service file.                    |
-| observatory-roof-client          | Contains the `roof` commandline utility for controlling the roof server. |
-| python3-warwick-observatory-roof | Contains the python module with shared code.                             |
-| halfmetre-roof-data              | Contains the json configuration and udev rules for the half metre.       |
-
-`observatory-roof-server` and `observatory-roof-client` and `halfmetre-roof-data` packages should be installed on the `halfmetre-tcs` machine.
+| Package                        | Description                                                              |
+|--------------------------------|--------------------------------------------------------------------------|
+| rockit-roof-server             | Contains the `roofd` server and systemd service file.                    |
+| rockit-roof-client             | Contains the `roof` commandline utility for controlling the roof server. |
+| python3-rockit-roof            | Contains the python module with shared code.                             |
+| rockit-roof-data-halfmetre | Contains the json configuration and udev rules for the half metre.       |
 
 After installing packages, the systemd service should be enabled:
 
@@ -55,7 +51,7 @@ Now open a port in the firewall:
 sudo firewall-cmd --zone=public --add-port=<port>/tcp --permanent
 sudo firewall-cmd --reload
 ```
-where `port` is the port defined in `warwick.observatory.common.daemons` for the daemon specified in the roof config.
+where `port` is the port defined in `rockit.common.daemons` for the daemon specified in the roof config.
 
 ### Upgrading Installation
 
