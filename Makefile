@@ -18,10 +18,10 @@ install:
 	@python3 -m build --outdir .
 	@sudo pip3 install rockit.roof-$$(cat VERSION)-py3-none-any.whl
 	@rm VERSION
-	@cp roofd roof /bin/
-	@cp roofd@.service /usr/lib/systemd/system/
-	@cp completion/roof /etc/bash_completion.d/
-	@install -d /etc/roofd
+	@sudo cp roofd roof /bin/
+	@sudo cp roofd@.service /usr/lib/systemd/system/
+	@sudo cp completion/roof /etc/bash_completion.d/
+	@sudo install -d /etc/roofd
 	@echo ""
 	@echo "Installed server, client, and service files."
 	@echo "Now copy the relevant json config files to /etc/roofd/"
