@@ -27,7 +27,7 @@ from rockit.roof import (
     CommandStatus,
     RoofStatus,
     HeartbeatStatus)
-from rockit.common import TFmt
+from rockit.common import print
 
 SCRIPT_NAME = os.path.basename(sys.argv[0])
 sys.excepthook = Pyro4.util.excepthook
@@ -72,17 +72,17 @@ def print_status(config, _):
         status = roof.status()
 
     date = datetime.datetime.strptime(status['date'], '%Y-%m-%dT%H:%M:%SZ')
-    eng_mode = TFmt.Red + 'ENABLED' if status['engineering_mode'] else TFmt.Green + 'DISABLED'
-    siren_mode = TFmt.Green + 'ENABLED' if status['siren'] else TFmt.Red + 'DISABLED'
+    eng_mode = '[red]ENABLED[/red]' if status['engineering_mode'] else '[green]DISABLED[/green]'
+    siren_mode = '[green]ENABLED[/green]' if status['siren'] else '[red]DISABLED[/red]'
 
-    print(f'Roof status at: {TFmt.Bold + str(date) + TFmt.Clear}')
+    print(f'Roof status at: [b]{date}[/b]')
     print(f'        Status: {RoofStatus.label(status["status"], formatting=True)}')
-    print(f'     Eng. mode: {TFmt.Bold + eng_mode + TFmt.Clear}')
-    print(f'         Siren: {TFmt.Bold + siren_mode + TFmt.Clear}')
-    print(f'       Battery: {TFmt.Bold}{status["battery_voltage_mean"]:.2f}V{TFmt.Clear}')
+    print(f'     Eng. mode: [b]{eng_mode}[/b]')
+    print(f'         Siren: [b]{siren_mode}[/b]')
+    print(f'       Battery: [b]{status["battery_voltage_mean"]:.2f}V[/b]')
     print(f'     Heartbeat: {HeartbeatStatus.label(status["heartbeat_status"], formatting=True)}')
     if status['heartbeat_status'] == 1:
-        print(f'Time remaining: {TFmt.Bold}{status["heartbeat_remaining"]}s{TFmt.Clear}')
+        print(f'Time remaining: [b]{status["heartbeat_remaining"]}s[/b]')
     return 0
 
 
