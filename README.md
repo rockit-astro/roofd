@@ -31,11 +31,11 @@ If the physical serial port or USB adaptors change these should be updated to ma
 
 The automated packaging scripts will push 4 RPM packages to the observatory package repository:
 
-| Package                        | Description                                                              |
-|--------------------------------|--------------------------------------------------------------------------|
-| rockit-roof-server             | Contains the `roofd` server and systemd service file.                    |
-| rockit-roof-client             | Contains the `roof` commandline utility for controlling the roof server. |
-| python3-rockit-roof            | Contains the python module with shared code.                             |
+| Package                    | Description                                                              |
+|----------------------------|--------------------------------------------------------------------------|
+| rockit-roof-server         | Contains the `roofd` server and systemd service file.                    |
+| rockit-roof-client         | Contains the `roof` commandline utility for controlling the roof server. |
+| python3-rockit-roof        | Contains the python module with shared code.                             |
 | rockit-roof-data-halfmetre | Contains the json configuration and udev rules for the half metre.       |
 
 After installing packages, the systemd service should be enabled:
