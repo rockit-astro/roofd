@@ -1,6 +1,6 @@
 Name:      rockit-roof
 Version:   %{_version}
-Release:   1
+Release:   1%{dist}
 Summary:   Rolling roof controller
 Url:       https://github.com/rockit-astro/roofd
 License:   GPL-3.0
